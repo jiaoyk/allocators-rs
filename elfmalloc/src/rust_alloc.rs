@@ -100,12 +100,11 @@ struct PageSource<M: MemorySource> {
 }
 
 impl<M: MemorySource> PageSource<M> {
-    fn new(
-        cutoff_bytes: usize,
-        target_size: usize,
-        pipe_size: usize,
-        page_size: usize,
-    ) -> PageSource<M> {
+    fn new(cutoff_bytes: usize,
+           target_size: usize,
+           pipe_size: usize,
+           page_size: usize)
+           -> PageSource<M> {
         PageSource {
             cutoff_bytes: cutoff_bytes,
             target_size: target_size,
@@ -120,25 +119,27 @@ impl<M: MemorySource> PageSource<M> {
             return;
         }
         if old_size >= self.cutoff_bytes {
-            mmap::uncommit(
-                p.offset(self.cutoff_bytes as isize),
-                self.source.page_size() - self.cutoff_bytes,
-            );
+            mmap::uncommit(p.offset(self.cutoff_bytes as isize),
+                           self.source.page_size() - self.cutoff_bytes);
         }
         self.pages.push_mut(p);
     }
 
     unsafe fn alloc(&mut self) -> Option<*mut u8> {
-        self.pages.pop_mut().or_else(|| {
-            const NPAGES: usize = 4;
-            self.source.carve(NPAGES).and_then(|pages| {
-                for i in 1..NPAGES {
-                    let offset = (i * self.source.page_size()) as isize;
-                    self.pages.push_mut(pages.offset(offset));
-                }
-                Some(pages)
+        self.pages
+            .pop_mut()
+            .or_else(|| {
+                const NPAGES: usize = 4;
+                self.source
+                    .carve(NPAGES)
+                    .and_then(|pages| {
+                                  for i in 1..NPAGES {
+                                      let offset = (i * self.source.page_size()) as isize;
+                                      self.pages.push_mut(pages.offset(offset));
+                                  }
+                                  Some(pages)
+                              })
             })
-        })
     }
 }
 
@@ -156,12 +157,11 @@ struct PageFrontend<M: MemorySource> {
 }
 
 impl<M: MemorySource> PageFrontend<M> {
-    fn new(
-        size: usize,
-        max_overhead: usize,
-        pipe_size: usize,
-        parent: PageSource<M>,
-    ) -> PageFrontend<M> {
+    fn new(size: usize,
+           max_overhead: usize,
+           pipe_size: usize,
+           parent: PageSource<M>)
+           -> PageFrontend<M> {
         debug_assert!(size <= parent.source.page_size());
         PageFrontend {
             parent: parent,
@@ -180,9 +180,9 @@ impl<M: MemorySource> PageFrontend<M> {
             self.parent.free(item, self.local_size);
             return;
         }
-        self.pages.try_push_mut(item).unwrap_or_else(|_| {
-            self.parent.free(item, self.local_size);
-        })
+        self.pages
+            .try_push_mut(item)
+            .unwrap_or_else(|_| { self.parent.free(item, self.local_size); })
     }
 }
 
@@ -364,9 +364,8 @@ unsafe impl<M: MemorySource> Alloc for ElfMalloc<M> {
     #[inline(always)]
     fn usable_size(&self, l: &Layout) -> (usize, usize) {
         trace!("usable_size({:?})", l.clone());
-        (
-            l.size(),
-            case_analyze!(
+        (l.size(),
+         case_analyze!(
             self,
             l,
             small if l.align() > mem::size_of::<usize>() {
@@ -375,8 +374,7 @@ unsafe impl<M: MemorySource> Alloc for ElfMalloc<M> {
                 l.size()
             };
             medium l.size().next_power_of_two();
-            large l.size();),
-        )
+            large l.size();))
     }
 }
 
@@ -455,44 +453,37 @@ impl ElfMallocBuilder {
         let n_small_classes = (self.page_size / 4) / MULTIPLE;
         assert!(n_small_classes > 0);
         let mut meta_pointers = mmap::map(mem::size_of::<Metadata>() * n_small_classes) as
-            *mut Metadata;
+                                *mut Metadata;
         let small_classes = Multiples::init(MULTIPLE, n_small_classes, |size: usize| {
             let meta = meta_pointers;
             unsafe {
                 meta_pointers = meta_pointers.offset(1);
-                ptr::write(
-                    meta,
-                    compute_metadata(
-                        size,
-                        self.page_size,
-                        0,
-                        self.reuse_threshold,
-                        self.page_size,
-                    ),
-                );
+                ptr::write(meta,
+                           compute_metadata(size,
+                                            self.page_size,
+                                            0,
+                                            self.reuse_threshold,
+                                            self.page_size));
             }
-            let params = (
-                meta,
-                usize::max_value(), /* no eager decommit */
-                pa.clone(),
-                RevocablePipe::new_size(self.small_pipe_size),
-            );
+            let params = (meta,
+                          usize::max_value(), /* no eager decommit */
+                          pa.clone(),
+                          RevocablePipe::new_size(self.small_pipe_size));
             ObjectAlloc::new(params)
         });
         let next_size_class = (small_classes.max_key() + 1).next_power_of_two();
         let max_size = self.max_object_size.next_power_of_two();
         let n_classes = max_size.trailing_zeros() - next_size_class.trailing_zeros();
-        let p_source = PageSource::<M>::new(
-            self.large_obj_cutoff,
-            self.large_obj_target_size,
-            self.large_pipe_size,
-            max_size,
-        );
+        let p_source = PageSource::<M>::new(self.large_obj_cutoff,
+                                            self.large_obj_target_size,
+                                            self.large_pipe_size,
+                                            max_size);
         let large_classes = PowersOfTwo::init(next_size_class, n_classes as usize, |size: usize| {
             let target_size: usize = cmp::max(1, self.target_pipe_overhead / size);
-            Lazy::<PageFrontend<M>>::new(
-                (size, target_size, self.small_pipe_size, p_source.clone()),
-            )
+            Lazy::<PageFrontend<M>>::new((size,
+                                          target_size,
+                                          self.small_pipe_size,
+                                          p_source.clone()))
         });
         debug_assert!(small_classes.max_key().is_power_of_two());
         ElfMalloc {
@@ -584,9 +575,10 @@ mod global {
     impl Drop for ElfMallocTLS {
         fn drop(&mut self) {
             unsafe {
-                let _ = BACKUP_CLEAN.lock().unwrap().send(OwnedElfMalloc(
-                    ptr::read(&mut self.0),
-                ));
+                let _ = BACKUP_CLEAN
+                    .lock()
+                    .unwrap()
+                    .send(OwnedElfMalloc(ptr::read(&mut self.0)));
             }
         }
     }
@@ -649,9 +641,7 @@ mod tests {
         let word_size = mem::size_of::<usize>();
         let mut alloc = ElfMallocBuilder::default().build_owned::<MmapSource>();
         let layouts: Vec<_> = (word_size..(8 << 10))
-            .map(|size| {
-                Layout::from_size_align(size * 128, word_size).unwrap()
-            })
+            .map(|size| Layout::from_size_align(size * 128, word_size).unwrap())
             .collect();
         unsafe {
             let mut ptrs = Vec::new();
@@ -679,7 +669,7 @@ mod tests {
                     let mut ptrs = Vec::new();
                     for l in &my_layouts {
                         let p = my_alloc.alloc(l.clone()).expect("alloc should not fail") as
-                            *mut usize;
+                                *mut usize;
                         ptr::write_volatile(p, !0);
                         ptrs.push(p);
                     }
@@ -697,30 +687,27 @@ mod tests {
     #[test]
     fn many_threads_many_sizes() {
         let word_size = mem::size_of::<usize>();
-        multi_threaded_alloc_test(
-            (word_size..(2 << 10))
-                .map(|size| {
-                    Layout::from_size_align(size * 1024, word_size).unwrap()
-                })
-                .collect(),
-        );
+        multi_threaded_alloc_test((word_size..(2 << 10))
+                                      .map(|size| {
+                                               Layout::from_size_align(size * 1024, word_size)
+                                                   .unwrap()
+                                           })
+                                      .collect());
     }
 
     #[test]
     fn large_ws_small_size() {
-        multi_threaded_alloc_test(
-            (1..(8 << 10))
-                .map(|_| Layout::from_size_align(64, 64).unwrap())
-                .collect(),
-        );
+        multi_threaded_alloc_test((1..(8 << 10))
+                                      .map(|_| Layout::from_size_align(64, 64).unwrap())
+                                      .collect());
     }
 
     #[test]
     fn large_ws_large_size() {
-        multi_threaded_alloc_test(
-            (1..(1 << 8))
-                .map(|_| Layout::from_size_align(512 << 10, 64).unwrap())
-                .collect(),
-        );
+        multi_threaded_alloc_test((1..(1 << 8))
+                                      .map(|_| {
+                                               Layout::from_size_align(512 << 10, 64).unwrap()
+                                           })
+                                      .collect());
     }
 }

@@ -48,8 +48,7 @@ impl<T, A: Alloc> VecLike<T> for AVec<T, A> {
 }
 
 impl<T, A: Alloc> AVec<T, A>
-where
-    Self: Default,
+    where Self: Default
 {
     pub fn new() -> Self {
         Self::default()
@@ -311,20 +310,18 @@ mod tests {
             vec.push(t);
         }
         b.iter(|| {
-            let mut vec = V::default();
-            for x in 0..(1 << 10) {
-                push_noinline(&mut vec, x);
-            }
-            test::black_box(vec)
-        });
+                   let mut vec = V::default();
+                   for x in 0..(1 << 10) {
+                       push_noinline(&mut vec, x);
+                   }
+                   test::black_box(vec)
+               });
     }
 
     #[bench]
     fn bench_push_nested_avec_elf(b: &mut Bencher) {
-        bench_push_nested::<
-            AVec<usize, DynamicAlloc>,
-            AVec<AVec<usize, DynamicAlloc>, DynamicAlloc>,
-        >(b);
+        bench_push_nested::<AVec<usize, DynamicAlloc>,
+                            AVec<AVec<usize, DynamicAlloc>, DynamicAlloc>>(b);
     }
 
     #[bench]
@@ -387,11 +384,11 @@ mod tests {
             vec.extend((0..(1 << 10)));
         }
         b.iter(|| {
-            let mut vec = V::default();
-            for _ in 0..10 {
-                extend_noinline(&mut vec);
-            }
-            test::black_box(vec)
-        });
+                   let mut vec = V::default();
+                   for _ in 0..10 {
+                       extend_noinline(&mut vec);
+                   }
+                   test::black_box(vec)
+               });
     }
 }

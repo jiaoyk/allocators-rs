@@ -29,6 +29,8 @@ extern crate log;
 mod utils;
 #[macro_use]
 mod stats;
+#[macro_use]
+mod tls;
 pub mod slag;
 pub mod general;
 
